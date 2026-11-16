@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="TalkBoard v1.3.8">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1976D2">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>TalkBoard AAC v1.3.8</title>
+
+<!-- PWA: real files (a blob: service worker is rejected by browsers) -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+/* Critical shell and first-board styles. The remainder is preloaded below. */
+/* ===== CSS RESET & VARIABLES ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --brand: #1976D2;
+  --brand-dark: #1565C0;
+  --brand-light: #BBDEFB;
+  --accent: #FF6F00;
+  --success: #2E7D32;
+  --danger: #C62828;
+  --warning: #F57F17;
+
+  --bg: #F5F7FA;
+  --surface: #FFFFFF;
+  --surface2: #EEF2F7;
+  --border: #DDE3EC;
+  --text-primary: #1A1D23;
+  --text-secondary: #5A6478;
+  --text-disabled: #A0ABB8;
+  --shadow: 0 2px 8px rgba(0,0,0,0.10);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.13);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.16);
+
+  --radius: 16px;
+  --radius-sm: 10px;
+  --radius-lg: 24px;
+  --tab-h: 60px;
+  --msg-h: 80px;
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --touch: 44px;
+  --content-padding: 14px;
+
+  /* Text colours that meet WCAG AA contrast on light surfaces */
+  --brand-ink: #1565C0;
+  --danger-ink: #C62828;
+  --success-ink: #2E7D32;
+  --msg-ink: #0D47A1;
+}
+
+[data-theme="dark"] {
+  --bg: #0F1117;
+  --surface: #1C1F2A;
+  --surface2: #252938;
+  --border: #323648;
+  --text-primary: #EDF0F7;
+  --text-secondary: #9BA4B8;
+  --text-disabled: #4A5168;
+  --shadow: 0 2px 8px rgba(0,0,0,0.40);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.50);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.60);
+  --brand-light: #1E3A5F;
+
+  /* Lighter text colours for dark surfaces (WCAG AA) */
+  --brand-ink: #90CAF9;
+  --danger-ink: #EF9A9A;
+  --success-ink: #81C784;
+  --msg-ink: #E3F2FD;
+}
+
+/* ===== BASE ===== */
+html, body {
+  height: 100%;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-inline-size: 100%;
+  overflow: hidden;
+}
+
+/* ===== FOCUS & A11Y ===== */
+:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+/* ===== MESSAGE BAR ===== */
+#message-bar {
+  flex-shrink: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--msg-h);
+  padding-block-start: max(8px, env(safe-area-inset-top, 0px));
+  padding-inline-start: max(12px, env(safe-area-inset-left, 0px));
+  padding-inline-end: max(12px, env(safe-area-inset-right, 0px));
+  box-shadow: var(--shadow);
+  z-index: 10;
+}
+
+#message-text {
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 1.05rem;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  cursor: default;
+  overflow-y: auto;
+  max-height: 90px;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+#message-text:empty::after {
+  content: 'Tap tiles to build your message…';
+  color: var(--text-secondary);
+  font-style: italic;
+  font-size: 0.9rem;
+}
+
+.msg-word {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--brand-light);
+  color: var(--msg-ink);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 0.93rem;
+  font-weight: 500;
+}
+
+.msg-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.msg-btn {
+  height: var(--touch);
+  min-width: var(--touch);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  transition: background 0.15s, transform 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 12px;
+  text-transform: uppercase;
+}
+
+.msg-btn:active { transform: scale(0.96); }
+
+#btn-speak { background: var(--brand); color: #fff; }
+#btn-speak:hover { background: var(--brand-dark); }
+#btn-undo { background: var(--surface2); color: var(--text-secondary); border: 1px solid var(--border); }
+#btn-clear { background: var(--danger); color: #fff; }
+
+@media (max-width: 420px) {
+  #message-bar { flex-wrap: wrap; gap: 6px; }
+  #message-text { flex: 1 1 100%; min-width: 0; }
+  .msg-actions { width: 100%; flex-direction: row; align-items: center; gap: 6px; }
+  .msg-actions #btn-speak { flex: 1 1 auto; min-width: 44px; }
+  .msg-actions > div { flex: 0 0 auto; }
+}
+
+/* ===== TAB BAR ===== */
+#tab-bar {
+  flex-shrink: 0;
+  background: var(--surface);
+  border-bottom: 2px solid var(--border);
+  display: flex;
+  align-items: stretch;
+  min-height: var(--tab-h);
+  padding-inline-start: env(safe-area-inset-left, 0px);
+  padding-inline-end: env(safe-area-inset-right, 0px);
+  z-index: 10;
+}
+
+.tab-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: color 0.15s, background 0.15s;
+  padding: 6px 4px;
+  position: relative;
+  min-width: var(--touch);
+  line-height: 1.1;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.tab-btn .tab-icon { font-size: 1.35rem; line-height: 1; }
+
+.tab-btn[aria-selected="true"] {
+  color: var(--brand-ink);
+}
+
+.tab-btn[aria-selected="true"]::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 10%;
+  right: 10%;
+  height: 3px;
+  background: var(--brand);
+  border-radius: 2px 2px 0 0;
+}
+
+.tab-btn:hover { background: var(--surface2); }
+
+#tab-settings {
+  flex: 0 0 56px;
+  margin-left: auto;
+}
+
+.tab-list { display: flex; flex: 1; align-items: stretch; justify-content: center; min-width: 0; }
+.tab-btn[data-tab] { flex: 0 1 clamp(52px, 11vw, 144px); min-width: 44px; }
+
+.hidden { display: none !important; }
+
+/* ===== CONTENT AREA ===== */
+#content {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--content-padding);
+  padding-inline-start: max(var(--content-padding), env(safe-area-inset-left, 0px));
+  padding-inline-end: max(var(--content-padding), env(safe-area-inset-right, 0px));
+  container: app-content / inline-size;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ===== TILE GRID ===== */
+.tile-grid {
+  --tile-columns: 3;
+  --tile-grid-gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(var(--tile-columns), minmax(0, 1fr));
+  width: 100%;
+  justify-content: center;
+  gap: var(--tile-grid-gap);
+}
+html[data-tile-size="large"] .tile-grid { --tile-columns: 2; --tile-grid-gap: 12px; }
+html[data-tile-size="large"] .tile { min-height: 150px; }
+html[data-tile-size="large"] .tile-label { font-size: clamp(.9rem, 3vw, 1.15rem); }
+html[data-tile-size="large"] .tile-emoji { font-size: clamp(2rem, 7vw, 3rem); }
+html[data-high-contrast="true"] { --bg:#000; --surface:#000; --surface2:#111; --border:#fff; --text-primary:#fff; --text-secondary:#fff; --brand:#ffeb00; --brand-ink:#ffeb00; --brand-light:#333; --msg-ink:#fff; }
+html[data-high-contrast="true"] .tile { border-width:3px; }
+
+/* Return to the original 3 / 4 / 5 board rhythm while keeping tiles bounded. */
+@media (max-width: 600px) {
+  :root { --content-padding: 10px; }
+}
+
+@media (min-width: 600px) {
+  .tile-grid { --tile-columns: 4; --tile-grid-gap: 10px; }
+  html[data-tile-size="large"] .tile-grid { --tile-columns: 3; }
+}
+
+@media (min-width: 1200px) {
+  .tile-grid { --tile-columns: 5; --tile-grid-gap: 12px; }
+  html[data-tile-size="large"] .tile-grid { --tile-columns: 4; }
+}
+
+/* When embedded in a narrower panel, size the grid from that panel, not the window. */
+@supports (container-type: inline-size) {
+  @container app-content (inline-size >= 600px) {
+    .tile-grid { --tile-columns: 4; --tile-grid-gap: 10px; }
+    html[data-tile-size="large"] .tile-grid { --tile-columns: 3; }
+  }
+  @container app-content (inline-size >= 1200px) {
+    .tile-grid { --tile-columns: 5; --tile-grid-gap: 12px; }
+    html[data-tile-size="large"] .tile-grid { --tile-columns: 4; }
+  }
+}
+
+/* ===== TILE BUTTON ===== */
+.tile {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+  padding: 8px 4px;
+  text-align: center;
+  box-shadow: var(--shadow);
+  position: relative;
+  min-height: var(--touch);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tile:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--brand); }
+.tile:active { transform: scale(0.93); box-shadow: none; }
+.tile:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+
+.tile-emoji { font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1; }
+.tile-label {
+  font-size: clamp(0.75rem, 1vw, 0.9rem);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+#tile-container[data-board-id="phrases"] .tile {
+  aspect-ratio: auto;
+  min-height: 178px;
+  height: 100%;
+  padding: 10px 8px;
+}
+#tile-container[data-board-id="phrases"] .tile-label {
+  overflow-wrap: anywhere;
+}
+.tile-composition {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(3px, .8vw, 8px);
+  width: 100%;
+  min-width: 0;
+}
+.tile-composition-part {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  line-height: 1.15;
+}
+.phrase-part-img { display: block; width: clamp(32px, 4vw, 46px); height: clamp(32px, 4vw, 46px); object-fit: contain; }
+.phrase-part-emoji { font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1; }
+.phrase-part-label { font-size: clamp(.62rem, .75vw, .75rem); font-weight: 600; overflow-wrap: anywhere; }
+.tile-composition-plus { flex: 0 0 auto; color: var(--text-secondary); font-size: 1.1rem; font-weight: 700; }
+
+/* Tile color variants */
+.tile[data-color="blue"] { border-color: #1976D2; background: linear-gradient(135deg, #E3F2FD 0%, #fff 100%); }
+.tile[data-color="green"] { border-color: #388E3C; background: linear-gradient(135deg, #E8F5E9 0%, #fff 100%); }
+.tile[data-color="orange"] { border-color: #F57C00; background: linear-gradient(135deg, #FFF3E0 0%, #fff 100%); }
+.tile[data-color="purple"] { border-color: #7B1FA2; background: linear-gradient(135deg, #F3E5F5 0%, #fff 100%); }
+.tile[data-color="red"] { border-color: #C62828; background: linear-gradient(135deg, #FFEBEE 0%, #fff 100%); }
+.tile[data-color="teal"] { border-color: #00796B; background: linear-gradient(135deg, #E0F2F1 0%, #fff 100%); }
+.tile[data-color="pink"] { border-color: #AD1457; background: linear-gradient(135deg, #FCE4EC 0%, #fff 100%); }
+.tile[data-color="yellow"] { border-color: #F9A825; background: linear-gradient(135deg, #FFFDE7 0%, #fff 100%); }
+
+[data-theme="dark"] .tile[data-color="blue"] { background: linear-gradient(135deg, #1C2E42 0%, var(--surface) 100%); }
+[data-theme="dark"] .tile[data-color="green"] { background: linear-gradient(135deg, #1B2E1C 0%, var(--surface) 100%); }
+[data-theme="dark"] .tile[data-color="orange"] { background: linear-gradient(135deg, #2E1E0A 0%, var(--surface) 100%); }
+[data-theme="dark"] .tile[data-color="purple"] { background: linear-gradient(135deg, #27133A 0%, var(--surface) 100%); }
+[data-theme="dark"] .tile[data-color="red"] { background: linear-gradient(135deg, #2E0E0E 0%, var(--surface) 100%); }
+[data-theme="dark"] .tile[data-color="teal"] { background: linear-gradient(135deg, #0A2422 0%, var(--surface) 100%); }
+[data-theme="dark"] .tile[data-color="pink"] { background: linear-gradient(135deg, #2E0A1D 0%, var(--surface) 100%); }
+[data-theme="dark"] .tile[data-color="yellow"] { background: linear-gradient(135deg, #2E2200 0%, var(--surface) 100%); }
+
+/* Edit overlay */
+.tile-edit-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(25,118,210,0.9);
+  color: #fff;
+  border: none;
+  font-size: 0.65rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transition: opacity 0.15s;
+  z-index: 2;
+}
+
+/* Tile + its edit button are siblings inside .tile-wrap (no nested buttons) */
+.tile-wrap { position: relative; min-width: 0; }
+.tile-wrap > .tile { width: 100%; }
+.tile-wrap:hover .tile-edit-btn,
+.tile-wrap:focus-within .tile-edit-btn { opacity: 1; }
+/* Touch screens have no hover: always show the edit button */
+@media (hover: none) {
+  .tile-edit-btn { opacity: 1; width: 32px; height: 32px; font-size: 0.8rem; }
+}
+
+/* Add tile placeholder */
+.tile-add {
+  border-style: dashed;
+  border-color: var(--brand);
+  background: transparent;
+  color: var(--brand-ink);
+  opacity: 0.85;
+}
+
+.tile-add:hover { opacity: 1; background: var(--brand-light); }
+
+/* ===== CATEGORY BOARD CHIPS ===== */
+#board-nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.board-chip {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.board-chip[aria-pressed="true"] {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+
+.board-chip:hover:not([aria-pressed="true"]) {
+  border-color: var(--brand);
+  color: var(--brand-ink);
+}
+
+/* Keep closed dialogs out of layout before the deferred stylesheet arrives. */
+#settings-panel[aria-hidden="true"], .modal-overlay[aria-hidden="true"] { display: none; }
+#lock-indicator {
+  position: fixed; bottom: max(16px, env(safe-area-inset-bottom, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); z-index: 50; display: flex; align-items: center; gap: 6px;
+  max-width: calc(100dvw - 32px);
+  padding: 6px 14px; border: 1.5px solid var(--border); border-radius: 20px;
+  background: var(--surface); color: var(--text-secondary); box-shadow: var(--shadow);
+  font-size: 0.72rem; font-weight: 700; white-space: normal; overflow-wrap: anywhere; cursor: pointer;
+}
+
+/* Reserve first-board artwork dimensions during image decode and stylesheet load. */
+.tile-img {
+  width: 62%; max-width: 172px; aspect-ratio: 1; object-fit: contain;
+  pointer-events: none; -webkit-user-drag: none; user-select: none;
+}
+.board-chip-img, .msg-img { width: 22px; height: 22px; object-fit: contain; flex-shrink: 0; }
+.board-tools { margin: 8px 0; }
+.board-tools input {
+  width: 100%; min-height: 44px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+  padding: 8px 12px; background: var(--surface); color: var(--text-primary); font: inherit;
+}
+.tile-fav {
+  position: absolute; top: 4px; left: 4px; z-index: 2; width: 34px; height: 34px;
+  border: 0; border-radius: 50%; background: var(--surface); color: var(--brand-ink);
+  font-size: 1.15rem; box-shadow: var(--shadow); cursor: pointer;
+}
+#tile-container > .tile-wrap[hidden] { display: none; }
+</style>
+<link rel="preload" href="styles.css" as="style">
+<link id="app-styles" rel="stylesheet" href="styles.css" media="print">
+<noscript><link rel="stylesheet" href="styles.css"></noscript>
+<link rel="preload" as="image" href="art/t_no.webp" imagesrcset="art/t_no-128.webp 128w, art/t_no.webp 320w" imagesizes="(max-width: 600px) 70px, 172px" fetchpriority="high">
+<script defer src="support-config.js"></script>
+<script defer src="js/00-core.js"></script>
+<script defer src="js/10-storage-dialogs.js"></script>
+<script defer src="js/20-theme-speech-trending.js"></script>
+<script defer src="js/30-lock-support.js"></script>
+<script defer src="js/40-board-ui.js"></script>
+<script defer src="js/50-settings-editors.js"></script>
+<script defer src="js/60-events-boot.js"></script>
+
+
+</head>
+<body>
+
+<!-- ===== MESSAGE BAR ===== -->
+<div id="message-bar" role="region" aria-label="Message composer">
+  <div id="message-text" aria-live="polite" aria-label="Composed message" role="status"></div>
+  <div class="msg-actions">
+    <button id="btn-speak" class="msg-btn" aria-label="Speak message" title="Speak (Enter)">
+      <span aria-hidden="true">🔊</span> Speak
+    </button>
+    <div style="display:flex;gap:5px;">
+      <button id="btn-repeat" class="msg-btn" aria-label="Repeat message" title="Repeat message">⟳</button>
+      <button id="btn-save-phrase" class="msg-btn" aria-label="Save message as a phrase" title="Save phrase">☆</button>
+      <button id="btn-undo" class="msg-btn" aria-label="Undo last word" title="Undo (Backspace)">
+        <span aria-hidden="true">↩</span>
+      </button>
+      <button id="btn-clear" class="msg-btn" aria-label="Clear message" title="Clear (Escape)">
+        <span aria-hidden="true">✕</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB BAR ===== -->
+<nav id="tab-bar" aria-label="Main navigation">
+  <div class="tab-list" role="tablist" aria-label="Views">
+    <button class="tab-btn" id="tab-home" role="tab" aria-selected="true" aria-controls="panel-home" data-tab="home" data-board="home">
+      <span class="tab-icon" aria-hidden="true">🏠</span>
+      <span>Home</span>
+    </button>
+    <button class="tab-btn" id="tab-phrases" role="tab" aria-selected="false" aria-controls="panel-home" data-tab="home" data-board="phrases">
+      <span class="tab-icon" aria-hidden="true">💬</span>
+      <span>Phrases</span>
+    </button>
+    <button class="tab-btn hidden" id="tab-support" role="tab" aria-selected="false" aria-controls="panel-support" data-tab="support" aria-label="Contact support">
+      <span class="tab-icon" aria-hidden="true">💬</span>
+      <span>Support</span>
+    </button>
+    <button class="tab-btn hidden" id="tab-trending" role="tab" aria-selected="false" aria-controls="panel-trending" data-tab="trending">
+      <span class="tab-icon" aria-hidden="true">📈</span>
+      <span>Trending</span>
+    </button>
+    <button class="tab-btn hidden" id="tab-categories" role="tab" aria-selected="false" aria-controls="panel-categories" data-tab="categories">
+      <span class="tab-icon" aria-hidden="true">🗂️</span>
+      <span>Categories</span>
+    </button>
+  </div>
+  <button class="tab-btn hidden" id="tab-settings" aria-haspopup="dialog" title="Settings (S)">
+    <span class="tab-icon" aria-hidden="true">⚙️</span>
+    <span>Settings</span>
+  </button>
+</nav>
+
+<!-- ===== CONTENT ===== -->
+<main id="content" role="main" aria-label="Communication board">
+
+  <!-- HOME PANEL -->
+  <section id="panel-home" role="tabpanel" aria-labelledby="tab-home">
+    <div class="board-tools"><label class="sr-only" for="tile-search">Search this board</label><input id="tile-search" type="search" placeholder="Search this board…" autocomplete="off"></div>
+    <div id="board-scroll">
+      <div id="board-nav" role="group" aria-label="Boards"></div>
+    </div>
+    <div id="phrase-bar" role="group" aria-label="Saved phrases"></div>
+    <div id="board-mgmt-bar" class="hidden">
+      <button class="btn-action primary" id="btn-add-board" aria-label="Add new board">➕ Board</button>
+      <button class="btn-action" id="btn-copy-board" aria-label="Copy this board">📄 Copy</button>
+      <button class="btn-action primary" id="btn-add-tile" aria-label="Add new tile">➕ Tile</button>
+      <button class="btn-action danger hidden" id="btn-delete-board">🗑️ Delete Board</button>
+    </div>
+    <div id="tile-container" class="tile-grid" aria-label="Communication tiles"></div>
+  </section>
+
+  <!-- TRENDING PANEL -->
+  <section id="panel-trending" role="tabpanel" aria-labelledby="tab-trending" class="hidden">
+    <div class="trending-filter" role="group" aria-label="Time period filter">
+      <button class="filter-btn active" data-period="day">Today</button>
+      <button class="filter-btn" data-period="week">Week</button>
+      <button class="filter-btn" data-period="month">Month</button>
+      <button class="filter-btn" data-period="6months">6 Months</button>
+      <button class="filter-btn" data-period="all">All Time</button>
+    </div>
+    <div id="trending-reset-wrap" class="hidden" style="margin-bottom:12px;">
+      <button class="btn-action danger" id="btn-reset-trending">🗑️ Reset Trending Data</button>
+    </div>
+    <div id="trending-content"></div>
+  </section>
+
+  <!-- CATEGORIES PANEL -->
+  <section id="panel-categories" role="tabpanel" aria-labelledby="tab-categories" class="hidden">
+    <p class="section-title">All Categories</p>
+    <div id="categories-grid" class="categories-grid"></div>
+  </section>
+
+  <!-- SUPPORT PANEL: user-controlled handoff to a configured contact center -->
+  <section id="panel-support" role="tabpanel" aria-labelledby="tab-support" class="hidden">
+    <div class="support-wrap">
+      <div class="support-intro">
+        <h1>Contact support</h1>
+        <p>Build or edit a message, review it, then choose whether to open the support service. Your draft stays on this screen until you choose to share it.</p>
+      </div>
+      <div class="support-note" role="note">You control what is shared. The support team may need time to reply. This screen does not send automatically or put TalkBoard speech into a phone call.</div>
+      <div class="support-card">
+        <label class="support-field" for="support-contact">Choose a support service
+          <select id="support-contact" aria-describedby="support-contact-info"></select>
+        </label>
+        <div id="support-contact-info" class="support-contact-info" role="status">No support service is configured on this copy of TalkBoard.</div>
+        <div class="support-actions">
+          <button type="button" class="btn-action" id="btn-support-use-board">Use my message board text</button>
+          <button type="button" class="btn-action" id="btn-support-clear">Clear draft</button>
+        </div>
+        <div class="section-title">Quick messages (edit before sharing)</div>
+        <div class="support-phrases" id="support-quick-phrases"></div>
+        <label class="support-field" for="support-message">Message to review
+          <textarea id="support-message" maxlength="1600" autocomplete="off" spellcheck="true" placeholder="Type a message or use a quick message…"></textarea>
+        </label>
+        <label class="support-consent"><input type="checkbox" id="support-consent"><span>I reviewed this message and want to share it with the selected service. It may contain personal information.</span></label>
+        <button type="button" class="support-launch" id="btn-support-launch" disabled>Choose a service first</button>
+        <p id="support-status" class="support-status" role="status" aria-live="polite"></p>
+      </div>
+      <p class="support-note">Web chat opens the business’s support page and copies your reviewed text so you can paste it there. SMS opens your phone’s messaging app with a draft; you still press Send there. Replies are handled by the business’s channel.</p>
+      <p class="support-note"><strong>TalkBoard AAC v1.3.8</strong> · Contact service details are supplied by the organization that deploys this copy.</p>
+    </div>
+  </section>
+
+</main>
+
+<!-- ===== LOCK INDICATOR ===== -->
+<button id="lock-indicator" title="Unlock (U)"><span aria-hidden="true">🔒</span> Locked – Tap to Unlock</button>
+
+<!-- ===== TOAST ===== -->
+<div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+<!-- ===== SETTINGS PANEL ===== -->
+<div id="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-hidden="true">
+  <div id="settings-sheet">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <div class="sheet-header">
+      <h2 class="sheet-title" id="settings-title">⚙️ Settings</h2>
+      <button class="sheet-close" id="settings-close" aria-label="Close settings">✕</button>
+    </div>
+    <div class="settings-body">
+
+      <!-- Output Mode -->
+      <div class="settings-section">
+        <div class="settings-section-title">Output Mode</div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Mode</div><div class="settings-row-sub">TTS = Text to Speech | Audio = uploaded clips</div></div>
+          <select class="settings-select" id="setting-output-mode" aria-label="Output mode">
+            <option value="tts">🔊 TTS</option>
+            <option value="audio">🎵 Audio</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Theme -->
+      <div class="settings-section">
+        <div class="settings-section-title">Appearance</div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Theme</div></div>
+          <select class="settings-select" id="setting-theme" aria-label="Color theme">
+            <option value="light">☀️ Light</option>
+            <option value="dark">🌙 Dark</option>
+          </select>
+        </div>
+        <div class="settings-row"><div><div class="settings-row-label">Tile size</div><div class="settings-row-sub">Larger tiles show fewer choices at once.</div></div><select class="settings-select" id="setting-tile-size" aria-label="Tile size"><option value="standard">Standard</option><option value="large">Large</option></select></div>
+        <div class="settings-row"><div><div class="settings-row-label">High contrast</div><div class="settings-row-sub">Use stronger contrast for visibility.</div></div><input type="checkbox" id="setting-high-contrast" aria-label="High contrast"></div>
+      </div>
+
+      <!-- Voice & Sound -->
+      <div class="settings-section">
+        <div class="settings-section-title">Voice & Sound</div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Volume</div></div>
+          <input type="range" class="settings-range" id="setting-volume" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">TTS Speed</div></div>
+          <input type="range" class="settings-range" id="setting-rate" min="0.5" max="2" step="0.1" value="1" aria-label="Speech rate">
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">TTS Voice</div></div>
+          <select class="settings-select" id="setting-voice" aria-label="TTS Voice"></select>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Voice Sample (reference only)</div>
+            <div class="settings-row-sub">MP3/WAV up to 5 MB, kept on this device. Not used for speech: to use a recorded voice, add clips to tiles and set Mode to Audio.</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end;">
+            <button type="button" class="btn-action" data-file-trigger="upload-voice">📂 Upload</button>
+            <input type="file" accept="audio/*" id="upload-voice" hidden aria-label="Upload voice sample">
+            <button class="btn-action danger" id="btn-delete-voice" style="display:none;">🗑️ Delete</button>
+          </div>
+        </div>
+        <div id="voice-preview-row" class="settings-row hidden">
+          <div><div class="settings-row-label">Voice Sample</div></div>
+          <audio id="voice-preview" controls style="height:36px;max-width:180px;"></audio>
+        </div>
+      </div>
+
+      <!-- Feel -->
+      <div class="settings-section">
+        <div class="settings-section-title">Feel</div>
+        <div class="settings-row"><div><div class="settings-row-label">On-device usage trends</div><div class="settings-row-sub">Record tile taps locally to show frequently used words. Turn off to stop collecting new counts.</div></div><input type="checkbox" id="setting-usage-tracking" aria-label="On-device usage trends"></div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Haptic Vibration</div><div class="settings-row-sub">On tile tap (if supported)</div></div>
+          <label class="toggle">
+            <input type="checkbox" id="setting-haptic" checked aria-label="Haptic vibration">
+            <span class="toggle-slider" aria-hidden="true"></span>
+          </label>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Keyboard Shortcuts</div><div class="settings-row-sub">Single keys U, S and 1–3. Turn off if they get pressed by accident.</div></div>
+          <label class="toggle">
+            <input type="checkbox" id="setting-shortcuts" checked aria-label="Keyboard shortcuts">
+            <span class="toggle-slider" aria-hidden="true"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Security -->
+      <div class="settings-section">
+        <div class="settings-section-title">Security</div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Caregiver PIN</div><div class="settings-row-sub" id="pin-status"></div></div>
+          <button class="btn-action" id="btn-change-pin">🔐 Change PIN</button>
+        </div>
+      </div>
+
+      <!-- Data -->
+      <div class="settings-section">
+        <div class="settings-section-title">Data &amp; Recovery</div>
+        <p class="form-hint">Your boards and clips stay in this browser on this device. Export a backup before changing or replacing phones. The caregiver PIN controls editing; it does not encrypt your saved data.</p>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Export Data</div><div class="settings-row-sub">Backup file (JSON) with boards, tiles, audio clips, settings and usage history. The PIN is not included.</div></div>
+          <button class="btn-action" id="btn-export">⬆️ Export</button>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Import Data</div><div class="settings-row-sub">Restore boards, built-in board edits, clips, history and settings from a JSON backup.</div></div>
+          <button type="button" class="btn-action" data-file-trigger="import-file">⬇️ Import</button>
+          <input type="file" accept="application/json,.json" id="import-file" hidden aria-label="Import data file">
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Restore Defaults</div><div class="settings-row-sub">Restores built-in boards and clears board edits, deleted boards, custom tiles, audio clips, trends and settings. Resets the PIN.</div></div>
+          <button class="btn-action danger" id="btn-restore">🔄 Restore</button>
+        </div>
+      </div>
+      <div class="settings-section"><div class="settings-section-title">First-use checklist</div><ol class="form-hint"><li>The initial PIN is 123456. Unlock with it, then choose a new PIN in Settings.</li><li>Copy a standard board or create a board from a routine template.</li><li>Try text to speech and any uploaded recordings.</li><li>Install this page from the phone browser menu, then confirm it opens in airplane mode.</li><li>Export a backup and keep it somewhere you can find later.</li></ol></div>
+
+      <!-- Keyboard Shortcuts -->
+      <div class="settings-section">
+        <div class="settings-section-title">Keyboard Shortcuts</div>
+        <table class="shortcuts-table" aria-label="Keyboard shortcuts reference">
+          <thead><tr><th>Key</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td>Enter</td><td>Speak message (when no button is focused)</td></tr>
+            <tr><td>Backspace</td><td>Undo last word</td></tr>
+            <tr><td>Escape</td><td>Clear message / close the top dialog</td></tr>
+            <tr><td>U</td><td>Unlock (shows PIN prompt)*</td></tr>
+            <tr><td>S</td><td>Open Settings (unlocked only)*</td></tr>
+            <tr><td>1–3</td><td>Switch tabs: Home/Trending/Categories (unlocked)*</td></tr>
+            <tr><td>Tab</td><td>Move between tiles and buttons</td></tr>
+            <tr><td>Space / Enter</td><td>Activate the focused tile or button</td></tr>
+            <tr><td>0–9, ⌫, Enter</td><td>Type the PIN in the PIN prompt</td></tr>
+            <tr><td colspan="2">* Can be turned off under Feel → Keyboard Shortcuts.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Privacy Notice -->
+      <div class="settings-section">
+        <div class="settings-section-title">🔏 Privacy Notice</div>
+        <div class="privacy-box" role="region" aria-label="Privacy notice">
+          <h4>What data is stored?</h4>
+          <ul>
+            <li>Communication boards and custom tiles you create.</li>
+            <li>Optional on-device usage trends and a short Recent list. Turn trends off under Feel to stop recording new tile taps.</li>
+            <li>Saved quick phrases and favorites.</li>
+            <li>Settings (theme, volume, speed, mode, voice, shortcuts).</li>
+            <li>Audio clips and the voice sample (browser IndexedDB on this device).</li>
+            <li>The caregiver PIN, stored as a one-way hash.</li>
+          </ul>
+          <h4 style="margin-top:10px;">Where is it stored?</h4>
+          <p>Boards and settings stay in this browser (localStorage and IndexedDB). The optional Support screen can open a service selected by you. A web-chat handoff copies your reviewed text to the clipboard; SMS places it in a phone draft. The app does not send it automatically. Once you paste or send it in the external service, that service's privacy practices apply. The page's security policy blocks background network requests.</p>
+          <h4 style="margin-top:10px;">Backups</h4>
+          <p><strong>Export</strong> saves everything above except the PIN into one file. Keep that file private.</p>
+          <h4 style="margin-top:10px;">How to delete?</h4>
+          <p>Use <strong>Restore Defaults</strong> above to erase all stored data. You can also clear this site's data in your browser settings.</p>
+          <h4 style="margin-top:10px;">Device sharing notice</h4>
+          <p>Data is visible to anyone with access to this device and browser. Lock the app when not in use to prevent unintended changes. The PIN stops casual changes; it is not strong security.</p>
+          <h4 style="margin-top:10px;">iPad and iPhone</h4>
+          <p>Add TalkBoard to the Home Screen. Safari can delete website data after 7 days without a visit, so also export a backup regularly.</p>
+          <p style="margin-top:10px;font-style:italic;">TalkBoard has not been formally assessed against privacy laws such as GDPR, HIPAA or the Australian Privacy Principles. Keeping data on the device supports their principles; compliance depends on how the app is used.</p>
+        </div>
+      </div>
+
+      <div class="settings-section"><div class="settings-section-title">Using TalkBoard on a phone</div><p class="form-hint">Install from your browser menu: on iPhone, use Safari → Share → Add to Home Screen. On Android, use Chrome → menu → Install app or Add to Home screen. Open once while online so the app and pictures can be cached, then try airplane mode. Export a backup before clearing browser data or moving to another phone.</p></div>
+
+    </div><!-- /settings-body -->
+  </div><!-- /settings-sheet -->
+</div><!-- /settings-panel -->
+
+<!-- ===== PIN MODAL ===== -->
+<div class="modal-overlay" id="pin-modal" role="dialog" aria-modal="true" aria-labelledby="pin-modal-title" aria-hidden="true">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="pin-modal-title">🔓 Enter PIN to Unlock</h3>
+      <button class="sheet-close" id="pin-cancel" aria-label="Cancel">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="pin-display" id="pin-display" tabindex="-1" data-autofocus><span id="pin-dots" aria-hidden="true">──────</span><span class="sr-only" id="pin-count" aria-live="polite">0 of 6 digits entered</span></div>
+      <div class="pin-pad" role="group" aria-label="PIN keypad">
+        <button class="pin-key" data-k="1" aria-label="1">1</button>
+        <button class="pin-key" data-k="2" aria-label="2">2</button>
+        <button class="pin-key" data-k="3" aria-label="3">3</button>
+        <button class="pin-key" data-k="4" aria-label="4">4</button>
+        <button class="pin-key" data-k="5" aria-label="5">5</button>
+        <button class="pin-key" data-k="6" aria-label="6">6</button>
+        <button class="pin-key" data-k="7" aria-label="7">7</button>
+        <button class="pin-key" data-k="8" aria-label="8">8</button>
+        <button class="pin-key" data-k="9" aria-label="9">9</button>
+        <button class="pin-key del" data-k="del" aria-label="Delete">⌫</button>
+        <button class="pin-key" data-k="0" aria-label="0">0</button>
+        <button class="pin-key ok" data-k="ok" aria-label="Confirm">✓</button>
+      </div>
+      <div class="pin-error hidden" id="pin-error" role="alert">Incorrect PIN. Please try again.</div>
+      <p class="form-hint" style="text-align:center;">You can also type the PIN on a keyboard.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TILE EDIT MODAL ===== -->
+<div class="modal-overlay" id="tile-modal" role="dialog" aria-modal="true" aria-labelledby="tile-modal-title" aria-hidden="true">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="tile-modal-title">Edit Tile</h3>
+      <button class="sheet-close" id="tile-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" for="tile-label-input">Label</label>
+        <input type="text" class="form-input" id="tile-label-input" placeholder="e.g. Help" maxlength="40" aria-required="true" data-autofocus>
+      </div>
+      <div class="form-group">
+        <div class="form-label" id="tile-emoji-label">Picture</div>
+        <input type="search" class="form-input" id="art-search" placeholder="Search pictures, e.g. water" aria-label="Search pictures" autocomplete="off">
+        <div class="art-picker" id="art-picker" role="group" aria-labelledby="tile-emoji-label"></div>
+        <input type="text" class="form-input" id="tile-custom-emoji" placeholder="Or type an emoji instead" style="margin-top:8px;" maxlength="16" aria-label="Custom emoji">
+      </div>
+      <div class="form-group">
+        <div class="form-label" id="tile-color-label">Color</div>
+        <div class="color-row" id="color-picker" role="group" aria-labelledby="tile-color-label"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="tile-audio-upload">Audio File (optional)</label>
+        <input type="file" accept="audio/*" id="tile-audio-upload" class="form-input" aria-describedby="tile-audio-hint" style="height:auto;padding:8px;">
+        <div id="tile-audio-hint" style="font-size:0.73rem;color:var(--text-secondary);margin-top:4px;">Choose an audio file up to 5 MB or record a clip. Saved on this device; plays when Mode is Audio.</div>
+        <div style="display:flex;gap:8px;margin-top:8px;"><button type="button" class="btn-action small" id="tile-record-start">🎙️ Record</button><button type="button" class="btn-action small hidden" id="tile-record-stop">⏹ Stop</button><span id="tile-record-status" class="form-hint" aria-live="polite"></span></div>
+        <div class="tile-audio-current hidden" id="tile-audio-current">
+          <span id="tile-audio-status">This tile has an audio clip.</span>
+          <button type="button" class="btn-action small" id="tile-audio-play">▶ Play</button>
+          <button type="button" class="btn-action small danger" id="tile-audio-remove">Remove clip</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-action danger" id="tile-delete-btn">🗑️ Delete</button>
+      <button class="btn-action" id="tile-cancel-btn">Cancel</button>
+      <button class="btn-action primary" id="tile-save-btn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== BOARD MODAL ===== -->
+<div class="modal-overlay" id="board-modal" role="dialog" aria-modal="true" aria-labelledby="board-modal-title" aria-hidden="true">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="board-modal-title">New Board</h3>
+      <button class="sheet-close" id="board-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" for="board-name-input">Board Name</label>
+        <input type="text" class="form-input" id="board-name-input" placeholder="e.g. My Favorites" maxlength="30" aria-required="true" data-autofocus>
+      </div>
+      <div class="form-group"><label class="form-label" for="board-template">Start from a template</label><select class="form-input" id="board-template"><option value="blank">Blank board</option><option value="home">Daily essentials</option><option value="food">Meals and drinks</option><option value="feelings">Feelings</option><option value="school">School and people</option></select></div>
+      <div class="form-group">
+        <div class="form-label" id="board-icon-label">Picture</div>
+        <input type="search" class="form-input" id="board-art-search" placeholder="Search pictures" aria-label="Search pictures" autocomplete="off">
+        <div class="art-picker" id="board-art-picker" role="group" aria-labelledby="board-icon-label"></div>
+        <input type="text" class="form-input" id="board-custom-emoji" placeholder="Or type an emoji instead" style="margin-top:8px;" maxlength="16" aria-label="Custom board icon">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-action" id="board-cancel-btn">Cancel</button>
+      <button class="btn-action primary" id="board-save-btn">Create Board</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CONFIRM MODAL ===== -->
+<div class="modal-overlay" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-hidden="true">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="confirm-title">⚠️ Confirm</h3>
+    </div>
+    <div class="modal-body">
+      <p id="confirm-msg" style="font-size:0.9rem;color:var(--text-secondary);"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-action" id="confirm-cancel" data-autofocus>Cancel</button>
+      <button class="btn-action danger" id="confirm-ok">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CHANGE PIN MODAL ===== -->
+<div class="modal-overlay" id="pinset-modal" role="dialog" aria-modal="true" aria-labelledby="pinset-title" aria-hidden="true">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" id="pinset-title">🔐 Change PIN</h3>
+      <button class="sheet-close" id="pinset-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" for="pinset-new">New 6-digit PIN</label>
+        <input type="password" class="form-input" id="pinset-new" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" data-autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="pinset-confirm">Type it again</label>
+        <input type="password" class="form-input" id="pinset-confirm" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off">
+      </div>
+      <p class="form-hint">Keep a note of it somewhere safe. If it is forgotten, the only way back in is clearing this site's data, which also erases boards (export a backup first).</p>
+      <div class="pin-error hidden" id="pinset-error" role="alert"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-action" id="pinset-cancel">Cancel</button>
+      <button class="btn-action primary" id="pinset-save">Save PIN</button>
+    </div>
+  </div>
+</div>
+
+
+</body>
+</html>
